@@ -303,6 +303,7 @@ async def parse_availability(page, n=20) -> SiteDateAvailable:
         last_expected_order = FirstLast.FIRST
     else:
         raise UnexpectedValueException('expecting page_order to be FIRST or LAST but it is {}'.format(page_order))
+
     k = 0
     while k <= n:
         k += 1
@@ -311,6 +312,7 @@ async def parse_availability(page, n=20) -> SiteDateAvailable:
         page_order = page_first_last(html)
         if page_order == last_expected_order:
             break
+        logger.info('wind {} ...'.format(direction))
         await rewind(page, direction)
     return availability
 
@@ -370,6 +372,7 @@ class DbStore(Store):
         cols = ['site_id', 't0', 't1', 'date', 'availability']
         data = [cols] + x[cols].values.tolist()
         bulk_upload(cls=RawAvailable, session=self.session, table_data=data)
+        self.session.commit()
 
     def get(self, timestamp: date) -> SiteDateAvailable:
         for x in self.session.query(
@@ -495,6 +498,7 @@ async def get_availability(park_url, show_ui=False, n=9999, store:Store=ConsoleS
     t0 = datetime.utcnow()
     k = 0
     while window_last_day < season_last_day and k < n:
+        logger.info('parse: window last day = {}; season last day = {}'.format(window_last_day,season_last_day))
         k += 1
         html = await page.evaluate('()=>document.body.innerHTML')
         season_last_day = parse_season_last_day(html)
@@ -503,6 +507,7 @@ async def get_availability(park_url, show_ui=False, n=9999, store:Store=ConsoleS
         window_last_day = this_availability.window_last_day()
         if window_last_day < season_last_day:
             next_url = get_next_url(html)
+            logger.info('go to next url {}'.format(next_url))
             await page.goto(next_url)
     t1 = datetime.utcnow()
     store.put(availability, t0=t0, t1=t1)
