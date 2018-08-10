@@ -1,30 +1,30 @@
-from abc import abstractmethod, ABCMeta
-
-import pandas as pd
-from unittest import TestCase
-
-from dateutil.relativedelta import relativedelta
-from pyppeteer import launch
 import asyncio
-# noinspection PyUnresolvedReferences
-from nose.tools import set_trace
-import urllib.request
-import urllib.parse
 import logging
 import os
 import re
+import urllib.parse
+import urllib.request
+from abc import abstractmethod, ABCMeta
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import List, Tuple
-from unittest.mock import patch, MagicMock
+from unittest import TestCase
 
 import click
 import numpy as np
+import pandas as pd
 from bs4 import BeautifulSoup
+from craniutil.bulk import bulk_upload
+from craniutil.dbtest.testdb import TestDb
+from dateutil.relativedelta import relativedelta
+# noinspection PyUnresolvedReferences
+from nose.tools import set_trace
+from pyppeteer import launch
 from sqlalchemy import func
 
-from sitemkt.model import get_session, SiteAvailable, RawAvailable
-from craniutil.bulk  import bulk_upload
+from sitemkt import config
+from sitemkt.model import get_session, SiteAvailable, RawAvailable, Base
+from sitemkt.util import config_logging
 
 URL = r'https://recreation.gov'
 logger = logging.getLogger(__name__)
@@ -61,16 +61,16 @@ class SiteDateAvailable(object):
         self.dates = dates
         self.is_available = is_available
 
-    def to_frame(self) -> pd.DataFrame:
+    def to_series(self) -> pd.Series:
         x = pd.DataFrame(data=self.is_available, index=self.sites, columns=self.dates)
         x.columns.name = 'date'
         x.index.name = 'site'
-        return x.unstack('date')
+        return x.stack('date').rename('is_available')
 
     def append(self, other):
         t0 = min(self.timestamps[0], other.timestamps[0])
         t1 = max(self.timestamps[1], other.timestamps[1])
-        z = pd.concat([self.to_frame(), other.to_frame()])
+        z = pd.concat([self.to_series(), other.to_series()])
         z = z.unstack('date')
         return SiteDateAvailable(
             sites=z.index.values, dates=z.columns,
@@ -268,7 +268,6 @@ async def rewind(page, direction):
     assert direction in ('previous', 'next')
     nav = await page.querySelector('span.pagenav')
     for link in await nav.JJ('a'):
-        logger.info(link)
         text = await page.evaluate('(link)=>link.textContent', link)
         if direction in text.lower():
             await page.evaluate('(link)=>link.click()', link)
@@ -276,35 +275,43 @@ async def rewind(page, direction):
             break
 
 
+class UnexpectedValueException(Exception):
+    pass
+
+
 async def parse_availability(page, n=20) -> SiteDateAvailable:
     html = await page.evaluate('()=>document.body.innerHTML')
     page_order = page_first_last(html)
-    logger.info('page order is {}'.format(page_order))
 
+    # TODO be able to go backwards if at last page
     k = 0
-    while not page_order == FirstLast.FIRST:
+    while page_order == FirstLast.MIDDLE:
         if k > n:
             logger.error('reached max iterations {} and still did not reach first page'.format(k))
             break
         k += 1
-        logger.info('rewind to previous...')
         await rewind(page, 'previous')
-        logger.info('get html')
         html = await page.evaluate('()=>document.body.innerHTML')
-        logger.info('get first last')
         page_order = page_first_last(html)
-        logger.info('got {}'.format(page_order))
 
     availability = SiteDateAvailable()
+    if page_order == FirstLast.FIRST:
+        direction = 'next'
+        last_expected_order = FirstLast.LAST
+    elif page_order == FirstLast.LAST:
+        direction = 'previous'
+        last_expected_order = FirstLast.FIRST
+    else:
+        raise UnexpectedValueException('expecting page_order to be FIRST or LAST but it is {}'.format(page_order))
     k = 0
     while k <= n:
         k += 1
         html = await page.evaluate('()=>document.body.innerHTML')
         availability = availability.append(parse_subset_availability(html))
         page_order = page_first_last(html)
-        if page_order == FirstLast.LAST:
+        if page_order == last_expected_order:
             break
-        await rewind(page, 'next')
+        await rewind(page, direction)
     return availability
 
 
@@ -344,9 +351,7 @@ def parse_season_last_day(html) -> date:
     soup = BeautifulSoup(html, 'html.parser')
     div = soup.select('#campgStatus')[0]
     for s in div.contents:
-        logger.info(s)
         if not isinstance(s, str):
-            logger.info('content not string; it is {}'.format(type(s)))
             continue
         m = re.compile(r'^.*Open through (.+)$').search(s)
         if m:
@@ -359,8 +364,12 @@ class DbStore(Store):
         self.session = session
 
     def put(self, a: SiteDateAvailable, t0: datetime, t1: datetime):
-        x = a.to_frame().assign(t0=t0,t1=t1).rename(columns={'site':'site_id'})
-        bulk_upload(self.session, RawAvailable, x)
+        x = a.to_series().reset_index().assign(t0=t0, t1=t1).rename(columns={'site': 'site_id'})
+        x = x.assign(t0 = t0, t1= t1)
+        x = x.rename(columns={'site':'site_id','is_available':'availability'})
+        cols = ['site_id', 't0', 't1', 'date', 'availability']
+        data = [cols] + x[cols].values.tolist()
+        bulk_upload(cls=RawAvailable, session=self.session, table_data=data)
 
     def get(self, timestamp: date) -> SiteDateAvailable:
         for x in self.session.query(
@@ -387,6 +396,24 @@ class DbStore(Store):
             return SiteDateAvailable(sites=y.site_id, dates=y.columns, is_available=y.availability)
 
 
+class TestDbStore(TestDb):
+
+    @classmethod
+    def base(cls):
+        return Base
+
+    def test_put(self):
+        try:
+            instance = DbStore(self.session)
+            sites= ['1','2','3']
+            dates = [date(2018,1,1),date(2018,2,1)]
+            is_available = (np.ones((3,2)) * Availability.WALKIN.value).astype(int)
+            a = SiteDateAvailable(sites=sites,dates=dates,is_available=is_available)
+            instance.put(a,datetime.utcnow(),datetime.utcnow())
+            count = self.session.query(RawAvailable).count()
+            assert count == 6
+        finally:
+            self.session.rollback()
 
 class CompressedStore(Store):
     def get(self, d: date) -> SiteDateAvailable:
@@ -413,7 +440,7 @@ class CompressedStore(Store):
     def __init__(self, session):
         self.session = session
 
-    def put(self, a: SiteDateAvailable):
+    def put(self, a: SiteDateAvailable, t0, t1):
         pass
 
     def build_dates(self, date) -> List[date]:
@@ -426,19 +453,6 @@ class CompressedStore(Store):
 
     def decode(self, t1, codes):
         pass
-
-
-@click.command()
-@click.option('--park-url', '-p', type=str)
-@click.option('--show-ui', '-u', is_flag=True)
-@click.option('--max-pages', '-n', default=9999)
-def main(park_url, show_ui, max_pages):
-    FORMAT = '%(asctime)-15s %(name)s %(lineno)s %(message)s'
-    logging.basicConfig(level=logging.INFO, format=FORMAT)
-    store = CompressedStore(get_session())
-    asyncio.get_event_loop().run_until_complete(
-        get_availability(park_url, show_ui, max_pages, store)
-    )
 
 
 def get_next_url(html) -> str:
@@ -478,7 +492,7 @@ async def get_availability(park_url, show_ui=False, n=9999, store:Store=ConsoleS
     season_last_day = date(2050, 1, 1)
     availability = SiteDateAvailable()
     browser, page = await browse_to_site(park_url, show_ui)
-
+    t0 = datetime.utcnow()
     k = 0
     while window_last_day < season_last_day and k < n:
         k += 1
@@ -490,8 +504,26 @@ async def get_availability(park_url, show_ui=False, n=9999, store:Store=ConsoleS
         if window_last_day < season_last_day:
             next_url = get_next_url(html)
             await page.goto(next_url)
-    store.put(availability)
+    t1 = datetime.utcnow()
+    store.put(availability, t0=t0, t1=t1)
     await browser.close()
+
+
+# TODO add asyncio unit tests
+
+
+@click.command()
+@click.option('--logging-config', '-l', default=config.LOGGING_CONFIG_FILE)
+@click.option('--park-url', '-p', type=str)
+@click.option('--show-ui', '-u', is_flag=True)
+@click.option('--max-pages', '-n', default=9999)
+@click.option('--write-to-console', '-c', is_flag=True)
+def main(park_url, show_ui, max_pages, logging_config, write_to_console):
+    config_logging(logging_config)
+    store = ConsoleStore() if write_to_console else DbStore(get_session())
+    asyncio.get_event_loop().run_until_complete(
+        get_availability(park_url, show_ui, max_pages, store)
+    )
 
 
 if __name__ == "__main__":
