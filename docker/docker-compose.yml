@@ -1,0 +1,15 @@
+# Start a console container for testing, plus a postgres constainer
+
+version: '2'
+services:
+  sitemkt-postgres:
+    image: postgres:latest
+    ports:
+     - 5433:5432
+    volumes:
+     - sitemkt-postgres:/var/lib/postgresql/data
+
+volumes:
+  sitemkt-postgres:
+    external: true
+
