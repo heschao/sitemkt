@@ -283,7 +283,6 @@ async def parse_availability(page, n=20) -> SiteDateAvailable:
     html = await page.evaluate('()=>document.body.innerHTML')
     page_order = page_first_last(html)
 
-    # TODO be able to go backwards if at last page
     k = 0
     while page_order == FirstLast.MIDDLE:
         if k > n:

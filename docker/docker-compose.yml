@@ -2,6 +2,20 @@
 
 version: '2'
 services:
+  sitemkt-console:
+    image: sitemkt
+    user: camper
+    working_dir: /home/camper/sitemkt
+    volumes:
+      - ../:/home/camper/sitemkt
+    stdin_open: true
+    tty: true
+    container_name: sitemkt-container
+    environment:
+      - PYTHONPATH=/home/camper/sitemkt
+      - LOGGING_CONFIG_FILE=/home/camper/sitemkt/config/logging.yml.example
+      - CONNECTION_STRING=postgresql+psycopg2://camper:reserve-me@sitemkt-postgres:5432/sitemkt
+
   sitemkt-postgres:
     image: postgres:latest
     ports:

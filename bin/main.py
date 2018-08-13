@@ -22,5 +22,9 @@ def init_db(clean: bool, connection_string):
     click.echo('done')
 
 
+# TODO Package into installable on hda
+# TODO Run inside docker headless
+# TODO Set up cron job to run on hda
+
 if __name__ == "__main__":
     main()
