@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import sys
 import urllib.parse
 import urllib.request
 from abc import abstractmethod, ABCMeta
@@ -357,7 +358,9 @@ def parse_season_last_day(html) -> date:
         m = re.compile(r'^.*Open through (.+)$').search(s)
         if m:
             return datetime.strptime(m.group(1).strip(), '%a %b %d %Y').date()
-    raise ContentNotFoundException('did not find season end date')
+        else:
+            logger.error("did not find season end date; giving you 6 months from now")
+            return (datetime.today() + timedelta(days=183)).date()
 
 
 class DbStore(Store):
@@ -465,6 +468,7 @@ def get_next_url(html) -> str:
 async def browse_to_site(url, show_ui):
     logger.info('launch browser')
     browser = await launch(
+        args=['--no-sandbox', '--disable-setuid-sandbox'],
         headless=not show_ui,
         devtools=False,
         slowMo=0.5)
@@ -500,6 +504,11 @@ async def get_availability(park_url, show_ui=False, n=9999, store:Store=ConsoleS
         logger.info('parse: window last day = {}; season last day = {}'.format(window_last_day,season_last_day))
         k += 1
         html = await page.evaluate('()=>document.body.innerHTML')
+
+        # with open('site.html', 'w') as f:
+        #     f.write(html)
+        #     sys.exit()
+
         season_last_day = parse_season_last_day(html)
         this_availability = await parse_availability(page)
         availability = availability.append(this_availability)
