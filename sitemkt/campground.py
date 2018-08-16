@@ -7,7 +7,13 @@ from time import sleep
 import asyncio
 from pyppeteer import launch
 
+from sitemkt.model import Campground
+from sitemkt.states import states
+from sitemkt.util import browse_to_site
+
 logger = logging.getLogger(__name__)
+
+URL = 'http://recreation.gov'
 
 def extract_park_id(href):
     result = urlparse.urlparse(href)
@@ -18,24 +24,9 @@ def test_extract_park_id():
         r'/unifSearchInterface.do?interface=camping&contractCode=NRSO&parkId=73562')
     assert result == 73562, result
 
-@click.command()
-@click.argument('term')
-@click.option('--min-delay','-n', default = 1.0)
-@click.option('--max-delay','-x', default = 5.0)
-@click.option('--max-pages','-p', default = 999999)
-@click.option('--show-ui','-u', is_flag=True)
-@click.option('--debug','-d', is_flag=True)
-def main(term, min_delay, max_delay, max_pages,show_ui, debug):
-    logging.basicConfig(level=logging.DEBUG if debug else logging.INFO)
-    asyncio.get_event_loop().run_until_complete(search(term, min_delay, max_delay, max_pages,show_ui))
-
-async def search(term, min_delay, max_delay, max_pages, show_ui):
+async def search(term, delay, max_pages, show_ui):
     logger.info('launch browser')
-    browser = await launch(headless=not show_ui)
-    page = await browser.newPage()
-
-    logger.info('navigate to url')
-    await page.goto('http://recreation.gov')
+    browser, page = await browse_to_site(show_ui=show_ui, url=URL)
 
     logger.info('search term = {}'.format(term))
     await page.type('#locationCriteria',term)
@@ -43,6 +34,12 @@ async def search(term, min_delay, max_delay, max_pages, show_ui):
     await page.evaluate('(form) => form.submit() ', form)
     await page.waitForNavigation()
 
+    radio = await page.querySelector('input[type="radio"][value="camping"]')
+    assert radio
+    await page.evaluate('(radio) => radio.click()', radio)
+    await page.waitForNavigation()
+
+    campgrounds = {}
     nextbtn = True
     pageid = 0
     while nextbtn and pageid<max_pages:
@@ -53,7 +50,9 @@ async def search(term, min_delay, max_delay, max_pages, show_ui):
             href = await page.evaluate('(card) => card.getAttribute("href")',card)
             try:
                 park_id = extract_park_id(href)
-                print('park_id={}: {}'.format(park_id,title))
+                c = Campground(park_id=park_id, name=title, state='', url=href, )
+                campgrounds[park_id] = c
+                logger.info('got {}'.format(c))
             except Exception as e:
                 logger.error('failed to parse park id. title={}, href={}'.format(title,href))
 
@@ -61,7 +60,6 @@ async def search(term, min_delay, max_delay, max_pages, show_ui):
             logger.info('{} pages reached; exit loop.'.format(pageid))
             break
 
-        delay = random.randrange(min_delay, max_delay)
         sleep(delay)
         nextbtn =  await page.querySelector('a[title="Next"]')
         if not nextbtn:
@@ -71,7 +69,16 @@ async def search(term, min_delay, max_delay, max_pages, show_ui):
         await page.waitForNavigation()
 
     await browser.close()
+    return campgrounds
 
 
-if __name__ == "__main__":
-    main()
+def search_state(state_code:str, delay=1, max_pages=9999, show_ui=False):
+    state_name = states[state_code]
+    term = "{} Campgrounds".format(state_name)
+    campgrounds = asyncio.get_event_loop().run_until_complete(
+        search(term=term, delay=delay, max_pages=max_pages, show_ui=show_ui)
+    )
+    for c in campgrounds.values():
+        c.state = state_code
+
+    return list(campgrounds.values())

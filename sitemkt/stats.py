@@ -4,7 +4,8 @@ from datetime import timedelta, datetime
 import click
 
 from sitemkt import config
-from sitemkt.dates_available import CompressedStore, SiteDateAvailable
+from sitemkt.data import SiteDateAvailable
+from sitemkt.store import CompressedStore
 from sitemkt.model import get_session
 from sitemkt.util import config_logging
 
