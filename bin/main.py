@@ -2,7 +2,7 @@ import click
 from sqlalchemy import create_engine
 
 from sitemkt import config, campground
-from sitemkt.model import Base, get_session
+from sitemkt.model import Base, get_session, Campground, Site, RawAvailable
 from sitemkt.store import CampgroundStoreDb
 from sitemkt.util import config_logging
 
@@ -34,11 +34,21 @@ def populate_campgrounds_cli(state, show_ui, max_pages):
     campgrounds = campground.search_state(state_code=state, show_ui=show_ui, max_pages=max_pages)
     store.put(campgrounds)
 
+@cli.command(name='status')
+def status_cli():
+    session = get_session()
+    n_campgrounds = session.query(Campground).count()
+    n_sites = session.query(Site).count()
+    n_records = session.query(RawAvailable).count()
+    print('''
+{:12,.0f} campgrounds
+{:12,.0f} sites
+{:12,.0f} records
+'''.format(n_campgrounds,n_sites,n_records))
 
 # TODO Package into installable on hda
 # TODO Set up cron job to run on hda
 # TODO Visualize data from db
-# TODO populate site if not already there when put() in availability store
 
 if __name__ == "__main__":
     cli()

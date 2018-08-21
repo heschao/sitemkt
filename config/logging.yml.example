@@ -1,0 +1,26 @@
+# logging.ini
+
+version: 1
+disable_existing_loggers: False
+formatters:
+  standard:
+    format: '%(asctime)s %(levelname)-5s %(filename)s %(lineno)d %(message)s'
+
+handlers:
+  stream: 
+    level: DEBUG
+    formatter: standard
+    class: logging.StreamHandler
+
+  file:
+    level: INFO
+    formatter: standard
+    class: logging.FileHandler
+    filename: 'sitemkt.log'
+    mode: a
+
+loggers:
+  '':
+    handlers: [stream]
+    level: INFO
+    propagate: False

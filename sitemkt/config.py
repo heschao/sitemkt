@@ -1,4 +1,7 @@
 import os
 
-LOGGING_CONFIG_FILE = os.environ['LOGGING_CONFIG_FILE']
+import sitemkt
+
+pkgdir = os.path.dirname(sitemkt.__file__)
+LOGGING_CONFIG_FILE = os.path.join( os.path.dirname(pkgdir), 'config', 'logging.yml')
 CONNECTION_STRING = os.environ['CONNECTION_STRING']
