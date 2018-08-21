@@ -21,7 +21,7 @@ class SiteDateAvailable(object):
     def __init__(self, sites: List[int] = None, dates: List[date] = None, is_available: np.ndarray = None,
                  timestamps: Tuple[datetime, datetime] = None):
         if timestamps is None:
-            timestamps = [datetime.now(), datetime.now()]
+            timestamps = [datetime.utcnow(), datetime.utcnow()]
         self.timestamps = timestamps
 
         if sites is None:

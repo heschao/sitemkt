@@ -52,10 +52,6 @@ class DbAvailabilityStore(AvailabilityStore):
         cols = ['site_id', 't0', 't1', 'date', 'availability']
         data = [cols] + x[cols].values.tolist()
 
-        self.session.query(RawAvailable).filter(RawAvailable.site_id.in_(x.site_id.drop_duplicates())).filter(
-            RawAvailable.date.in_(x.date.drop_duplicates())
-        ).delete(synchronize_session=False)
-
         bulk_upload(cls=RawAvailable, session=self.session, table_data=data)
         self.session.commit()
 
