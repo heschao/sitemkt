@@ -1,3 +1,4 @@
+import numpy.testing as npt
 import asyncio
 import logging
 import os
@@ -55,14 +56,18 @@ def parse_month_name(name) -> List[date]:
 def decode_dates(months, days) -> List[date]:
     dates = []
     prev_day = -1
+    i = 0
     for day in days:
         if day < prev_day:
-            month = months[1]
-        else:
-            month = months[0]
+            i+=1
+        month = months[i]
         prev_day = day
         dates.append(month + timedelta(days=day - 1))
     return dates
+
+def test_decode_dates():
+    result = decode_dates(months=[date(2018,8,1), date(2018,9,1)],days=[31,1,2])
+    npt.assert_array_equal(result, [date(2018,8,31), date(2018,9,1), date(2018,9,2)])
 
 
 def parse_site_number(cell) -> Optional[int]:
@@ -71,7 +76,11 @@ def parse_site_number(cell) -> Optional[int]:
     if not label:
         return None
     a = label.find(lambda tag: tag.name == 'a')
-    return int(a.contents[0])
+    try:
+        return int(a.contents[0])
+    except ValueError:
+        logger.error('failed to parse as int {}'.format(a.contents[0]))
+        return None
 
 
 def parse_cell(cell) -> Availability:
@@ -100,9 +109,9 @@ def find_site_availabilities(table) -> (List[str], np.ndarray):
         x = []
         cells = row.findAll(lambda tag: tag.name == 'td')
         site_number = parse_site_number(cells[0])
-        sites.append(site_number)
         if not site_number:
             continue
+        sites.append(site_number)
         for cell in cells[2:]:
             x.append(parse_cell(cell).value)
         y.append(x)
@@ -124,13 +133,18 @@ class FirstLast(Enum):
     FIRST = 0
     MIDDLE = 1
     LAST = 2
+    ONLY = 3
 
 
 def page_first_last(html) -> FirstLast:
     next, prev = get_prev_next(html)
-    if prev.has_attr('class') and 'disabled' in prev['class']:
+    no_prev = prev.has_attr('class') and 'disabled' in prev['class']
+    no_next = next.has_attr('class') and 'disabled' in next['class']
+    if no_prev and no_next:
+        return FirstLast.ONLY
+    if no_prev:
         return FirstLast.FIRST
-    elif next.has_attr('class') and 'disabled' in next['class']:
+    elif no_next:
         return FirstLast.LAST
     else:
         return FirstLast.MIDDLE
@@ -163,6 +177,11 @@ async def rewind(page, direction):
 async def parse_availability(page, n=20) -> SiteDateAvailable:
     html = await page.evaluate('()=>document.body.innerHTML')
     page_order = page_first_last(html)
+
+    if page_order == FirstLast.ONLY:
+        html = await page.evaluate('()=>document.body.innerHTML')
+        return parse_subset_availability(html)
+
 
     k = 0
     while page_order == FirstLast.MIDDLE:
@@ -208,7 +227,7 @@ def parse_subset_availability(html):
 
     sites, is_available = find_site_availabilities(table)
 
-    return SiteDateAvailable(sites=sites, dates=dates, is_available=is_available)
+    return SiteDateAvailable(sites=sites, dates=dates, is_available=is_available) if sites else SiteDateAvailable()
 
 
 def test_parse_subset_availability():
@@ -255,6 +274,13 @@ async def get_availability(show_ui=False, n=9999, store: Store = ConsoleStore())
     availability = SiteDateAvailable()
     park_url = store.get_url()
     browser, page = await browse_to_site(park_url, show_ui)
+
+    link = await page.querySelector("#campCalendar")
+    assert link
+    await page.evaluate('(link) => link.click()', link)
+    await page.waitForNavigation()
+
+    # input('hit any key')
     t0 = datetime.utcnow()
     k = 0
     while window_last_day < season_last_day and k < n:
@@ -264,6 +290,10 @@ async def get_availability(show_ui=False, n=9999, store: Store = ConsoleStore())
 
         season_last_day = parse_season_last_day(html)
         this_availability = await parse_availability(page)
+        if this_availability.isempty():
+            logger.error("empty availability; exit")
+            break
+
         availability = availability.append(this_availability)
         window_last_day = this_availability.window_last_day()
         if window_last_day < season_last_day:
@@ -271,7 +301,10 @@ async def get_availability(show_ui=False, n=9999, store: Store = ConsoleStore())
             logger.info('go to next url {}'.format(next_url))
             await page.goto(next_url)
     t1 = datetime.utcnow()
-    store.put(availability, t0=t0, t1=t1)
+
+    if not availability.isempty():
+        store.put(availability, t0=t0, t1=t1)
+
     await browser.close()
 
 

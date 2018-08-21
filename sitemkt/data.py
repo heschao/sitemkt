@@ -10,10 +10,11 @@ from sitemkt.exception import DimensionException
 
 
 class Availability(Enum):
-    AVAILABLE = 1
-    RESERVED = 2
-    WALKIN = 3
-    NOT_AVAILABLE = 4
+    AVAILABLE = 1.0
+    RESERVED = 2.0
+    WALKIN = 3.0
+    NOT_AVAILABLE = 4.0
+    UNKNOWN = np.nan
 
 
 class SiteDateAvailable(object):
@@ -26,7 +27,7 @@ class SiteDateAvailable(object):
         if sites is None:
             self.sites = []
             self.dates = []
-            self.is_available = np.ones((0, 0)).astype(int)
+            self.is_available = np.ones((0, 0))
             return
 
         n_sites = len(sites)
@@ -34,8 +35,8 @@ class SiteDateAvailable(object):
         rows, cols = is_available.shape
         if n_sites != rows or n_dates != cols:
             raise DimensionException('dimensions mismatch')
-        if not issubclass(is_available.dtype.type, np.int64):
-            raise TypeError('is_available must be int64 type but it is {}'.format(is_available.dtype.type))
+        if not issubclass(is_available.dtype.type, np.float):
+            raise TypeError('is_available must be float type but it is {}'.format(is_available.dtype.type))
         self.sites = sites
         self.dates = dates
         self.is_available = is_available
@@ -47,9 +48,15 @@ class SiteDateAvailable(object):
         return x.stack('date').rename('is_available')
 
     def append(self, other):
+        if self.isempty():
+            return other
+        elif other.isempty():
+            return self
+
         t0 = min(self.timestamps[0], other.timestamps[0])
         t1 = max(self.timestamps[1], other.timestamps[1])
         z = pd.concat([self.to_series(), other.to_series()])
+        z = z.loc[~z.isnull()].sort_values()
         z = z[~z.index.duplicated(keep='first')]
         z = z.unstack('date')
         return SiteDateAvailable(
@@ -94,22 +101,23 @@ class SiteDateAvailable(object):
 
 class TestSiteDateAvailable(TestCase):
     def test_append_0(self):
-        a = SiteDateAvailable([1,2], [date(2018, 1, 1), date(2018, 1, 2)], np.ones((2, 2)).astype(int))
+        a = SiteDateAvailable([1,2], [date(2018, 1, 1), date(2018, 1, 2)], np.ones((2, 2)))
         b = SiteDateAvailable([1,2], [date(2018, 1, 3), date(2018, 1, 5), date(2018, 1, 6)],
-                              np.ones((2, 3)).astype(int))
+                              np.ones((2, 3)))
         result = a.append(b)
         assert result.is_available.shape == (2, 5)
 
     def test_append_1(self):
         a = SiteDateAvailable()
         b = SiteDateAvailable([1,2], [date(2018, 1, 3), date(2018, 1, 5), date(2018, 1, 6)],
-                              np.ones((2, 3)).astype(int))
+                              np.ones((2, 3)))
         result = a.append(b)
         assert result.is_available.shape == (2, 3)
 
     def test_append_2(self):
-        a = SiteDateAvailable([1,2], [date(2018, 1, 1), date(2018, 1, 2)], np.ones((2, 2)).astype(int))
+        a = SiteDateAvailable([1,2], [date(2018, 1, 1), date(2018, 1, 2)], np.ones((2, 2)))
         b = SiteDateAvailable([1,2], [date(2018, 1, 2), date(2018, 1, 5), date(2018, 1, 6)],
-                              np.ones((2, 3)).astype(int))
+                              np.ones((2, 3)))
         result = a.append(b)
         assert result.is_available.shape == (2, 4)
+1

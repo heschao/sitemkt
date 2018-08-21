@@ -2,6 +2,7 @@ import logging
 from abc import ABCMeta, abstractmethod
 from datetime import datetime, date, timedelta
 from typing import List
+from urllib.parse import urlunparse
 
 import numpy as np
 import pandas as pd
@@ -33,7 +34,7 @@ class Store(metaclass=ABCMeta):
 
 class DbStore(Store):
     def get_url(self) -> str:
-        return self.session.query(Campground).filter(Campground.park_id==self.park_id).first().url
+        return "https://recreation.gov" + self.session.query(Campground).filter(Campground.park_id==self.park_id).first().url
 
 
     def __init__(self, session, park_id):
@@ -44,7 +45,10 @@ class DbStore(Store):
         x = a.to_series().reset_index().assign(t0=t0, t1=t1)
         x = x.assign(t0=t0, t1=t1)
         x = x.rename(columns={'site': 'site_number', 'is_available': 'availability'})
+        self.update_sites(site_numbers = x.site_number.values)
+
         x = self.map_to_site_id(x)
+        x = x.assign( availability = x.availability.astype(int))
         cols = ['site_id', 't0', 't1', 'date', 'availability']
         data = [cols] + x[cols].values.tolist()
 
@@ -99,6 +103,13 @@ class DbStore(Store):
         assert not u.site_number.isnull().any()
         return u
 
+    def update_sites(self, site_numbers:List[int]):
+        existing_site_numbers = [x.number for x in self.session.query(Site.number).filter(Site.park_id==self.park_id).all()]
+        new_site_numbers = set(site_numbers).difference(set(existing_site_numbers))
+        for site_number in new_site_numbers:
+            self.session.add(Site(park_id=self.park_id, number=int(site_number)))
+        self.session.flush()
+
 
 class TestDbStore(TestDb):
     @classmethod
@@ -108,15 +119,6 @@ class TestDbStore(TestDb):
             Campground(park_id=1,name='Doe Point',state='OR'),
             Campground(park_id=2,name='Dowdy Lake',state='CO'),
         ])
-        cls.session.flush()
-        cls.session.add_all([
-            Site(id='1-1', number=1, park_id=1),
-            Site(id='1-2', number=2, park_id=1),
-            Site(id='1-3', number=3, park_id=1),
-            Site(id='1-4', number=4, park_id=1),
-            Site(id='2-3', number=3, park_id=2),
-            ]
-        )
         cls.session.commit()
 
 
@@ -134,7 +136,7 @@ class TestDbStore(TestDb):
             instance = DbStore(self.session, park_id=1)
             sites = [1, 2, 3]
             dates = [date(2018, 1, 1), date(2018, 2, 1)]
-            is_available = (np.ones((3, 2)) * Availability.WALKIN.value).astype(int)
+            is_available = (np.ones((3, 2)) * Availability.WALKIN.value)
             a = SiteDateAvailable(sites=sites, dates=dates, is_available=is_available)
             instance.put(a, datetime.utcnow(), datetime.utcnow())
             count = self.session.query(RawAvailable).count()
@@ -147,20 +149,21 @@ class TestDbStore(TestDb):
             instance = DbStore(self.session, park_id=1)
             sites = [1, 2, 3]
             dates = [date(2018, 1, 1), date(2018, 2, 1)]
-            is_available = (np.ones((3, 2)) * Availability.WALKIN.value).astype(int)
+            is_available = (np.ones((3, 2)) * Availability.WALKIN.value)
             a = SiteDateAvailable(sites=sites, dates=dates, is_available=is_available)
             instance.put(a, datetime.utcnow(), datetime.utcnow())
 
             sites = [3, 4]
             dates = [date(2018, 1, 1), date(2018, 2, 1)]
-            is_available = (np.ones((2, 2)) * Availability.RESERVED.value).astype(int)
+            is_available = (np.ones((2, 2)) * Availability.RESERVED.value)
             b = SiteDateAvailable(sites=sites, dates=dates, is_available=is_available)
             instance.put(b, datetime.utcnow(), datetime.utcnow())
 
             count = self.session.query(RawAvailable).count()
             assert count == 8
 
-            result = self.session.query(RawAvailable).filter(RawAvailable.site_id == '1-3').first()
+            site_id = self.session.query(Site).filter(Site.park_id==1).filter(Site.number==3).first().id
+            result = self.session.query(RawAvailable).filter(RawAvailable.site_id == site_id).first()
             assert result.availability == Availability.RESERVED.value, result
         finally:
             self.session.rollback()

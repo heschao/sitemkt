@@ -38,9 +38,7 @@ def populate_campgrounds_cli(state, show_ui, max_pages):
 # TODO Package into installable on hda
 # TODO Set up cron job to run on hda
 # TODO Visualize data from db
-# TODO create unique site_id that encapsulates park_id and site_number
-# TODO build url from park_id
-# TODO catalogue campgrounds by name and park_id and other info
+# TODO populate site if not already there when put() in availability store
 
 if __name__ == "__main__":
     cli()
