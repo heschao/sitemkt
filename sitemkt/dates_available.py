@@ -19,7 +19,7 @@ from sitemkt import config
 from sitemkt.data import Availability, SiteDateAvailable
 from sitemkt.exception import DimensionException, UnexpectedValueException
 from sitemkt.model import get_session
-from sitemkt.store import Store, DbStore, ConsoleStore
+from sitemkt.availabilitystore import AvailabilityStore, DbAvailabilityStore, ConsoleAvailabilityStore
 from sitemkt.util import config_logging, browse_to_site
 
 URL = r'https://recreation.gov'
@@ -268,7 +268,7 @@ def build_url(park_id) -> str:
     return r'https://www.recreation.gov/camping/Doe-Point-Campground/r/campsiteCalendar.do?page=calendar&search=site&contractCode=NRSO&parkId=119240'
 
 
-async def get_availability(show_ui=False, n=9999, store: Store = ConsoleStore()):
+async def get_availability(show_ui=False, n=9999, store: AvailabilityStore = ConsoleAvailabilityStore()):
     window_last_day = date.today()
     season_last_day = date(2050, 1, 1)
     availability = SiteDateAvailable()
@@ -319,7 +319,7 @@ async def get_availability(show_ui=False, n=9999, store: Store = ConsoleStore())
 @click.option('--write-to-console', '-c', is_flag=True)
 def main(park_id, show_ui, max_pages, logging_config, write_to_console):
     config_logging(logging_config)
-    store = ConsoleStore() if write_to_console else DbStore(session=get_session(), park_id=park_id)
+    store = ConsoleAvailabilityStore() if write_to_console else DbAvailabilityStore(session=get_session(), park_id=park_id)
     asyncio.get_event_loop().run_until_complete(
         get_availability(show_ui, max_pages, store)
     )

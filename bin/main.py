@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 
 from sitemkt import config, campground
 from sitemkt.model import Base, get_session, Campground, Site, RawAvailable
-from sitemkt.store import CampgroundStoreDb
+from sitemkt.availabilitystore import DbCampgroundStore
 from sitemkt.util import config_logging
 
 
@@ -30,7 +30,7 @@ def init_db(clean: bool, connection_string):
 @click.option('--max-pages','-n', default=99999)
 def populate_campgrounds_cli(state, show_ui, max_pages):
     session = get_session()
-    store = CampgroundStoreDb(session=session)
+    store = DbCampgroundStore(session=session)
     campgrounds = campground.search_state(state_code=state, show_ui=show_ui, max_pages=max_pages)
     store.put(campgrounds)
 

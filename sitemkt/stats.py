@@ -5,7 +5,7 @@ import click
 
 from sitemkt import config
 from sitemkt.data import SiteDateAvailable
-from sitemkt.store import CompressedStore
+from sitemkt.availabilitystore import CompressedAvailabilityStore
 from sitemkt.model import get_session
 from sitemkt.util import config_logging
 
@@ -31,7 +31,7 @@ def calc_transitions(a: SiteDateAvailable, b: SiteDateAvailable) -> (int, int):
 @click.argument('day_0', type=mkdate)
 @click.argument('day_1', type=mkdate)
 def transition_prob_cli(day_0, day_1):
-    store = CompressedStore(get_session())
+    store = CompressedAvailabilityStore(get_session())
     n_days = (day_1 - day_0).days
     timestamps = [day_0 + timedelta(days=i) for i in range(n_days)]
     a_prev = store.get(timestamps[0])

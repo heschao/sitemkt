@@ -18,7 +18,7 @@ from sitemkt.model import RawAvailable, Base, SiteAvailable, Site, Campground
 
 logger = logging.getLogger(__name__)
 
-class Store(metaclass=ABCMeta):
+class AvailabilityStore(metaclass=ABCMeta):
     @abstractmethod
     def put(self, a: SiteDateAvailable, t0: datetime, t1: datetime):
         pass
@@ -32,7 +32,7 @@ class Store(metaclass=ABCMeta):
         pass
 
 
-class DbStore(Store):
+class DbAvailabilityStore(AvailabilityStore):
     def get_url(self) -> str:
         return "https://recreation.gov" + self.session.query(Campground).filter(Campground.park_id==self.park_id).first().url
 
@@ -133,7 +133,7 @@ class TestDbStore(TestDb):
 
     def test_put_0(self):
         try:
-            instance = DbStore(self.session, park_id=1)
+            instance = DbAvailabilityStore(self.session, park_id=1)
             sites = [1, 2, 3]
             dates = [date(2018, 1, 1), date(2018, 2, 1)]
             is_available = (np.ones((3, 2)) * Availability.WALKIN.value)
@@ -146,7 +146,7 @@ class TestDbStore(TestDb):
 
     def test_put_1(self):
         try:
-            instance = DbStore(self.session, park_id=1)
+            instance = DbAvailabilityStore(self.session, park_id=1)
             sites = [1, 2, 3]
             dates = [date(2018, 1, 1), date(2018, 2, 1)]
             is_available = (np.ones((3, 2)) * Availability.WALKIN.value)
@@ -169,7 +169,7 @@ class TestDbStore(TestDb):
             self.session.rollback()
 
 
-class CompressedStore(Store):
+class CompressedAvailabilityStore(AvailabilityStore):
     def get(self, d: date) -> SiteDateAvailable:
         z = []
         for x in self.session.query(
@@ -209,7 +209,7 @@ class CompressedStore(Store):
         pass
 
 
-class ConsoleStore(Store):
+class ConsoleAvailabilityStore(AvailabilityStore):
     def get_url(self) -> str:
         pass
 
@@ -226,7 +226,7 @@ class CampgroundStore(metaclass=ABCMeta):
         pass
 
 
-class CampgroundStoreDb(CampgroundStore):
+class DbCampgroundStore(CampgroundStore):
     def __init__(self, session:Session):
         self.session = session
 
