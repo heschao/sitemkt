@@ -45,7 +45,7 @@ async def search(term, delay, max_pages, show_ui):
     while nextbtn and pageid<max_pages:
         pageid+=1
         logger.info('page {}'.format(pageid))
-        for card in await page.querySelectorAll('.facility_link'):
+        for card in await page.querySelectorAll('div#search_results_list > div.eufacility_view_card > div > div > div > a.facility_link'):
             title = await page.evaluate('(card) => card.getAttribute("title")',card)
             href = await page.evaluate('(card) => card.getAttribute("href")',card)
             try:

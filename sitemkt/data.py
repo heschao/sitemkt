@@ -18,7 +18,7 @@ class Availability(Enum):
 
 
 class SiteDateAvailable(object):
-    def __init__(self, sites: List[int] = None, dates: List[date] = None, is_available: np.ndarray = None,
+    def __init__(self, sites: List[str] = None, dates: List[date] = None, is_available: np.ndarray = None,
                  timestamps: Tuple[datetime, datetime] = None):
         if timestamps is None:
             timestamps = [datetime.utcnow(), datetime.utcnow()]

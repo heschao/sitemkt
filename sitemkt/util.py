@@ -1,4 +1,5 @@
 import logging
+import signal
 from logging.config import dictConfig
 import yaml
 from pyppeteer import launch
@@ -24,3 +25,13 @@ async def browse_to_site(url, show_ui):
     logger.info('navigate to url')
     await page.goto(url)
     return browser, page
+
+
+class GracefulKiller:
+  kill_now = False
+  def __init__(self):
+    signal.signal(signal.SIGINT, self.exit_gracefully)
+    signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+  def exit_gracefully(self,signum, frame):
+    self.kill_now = True

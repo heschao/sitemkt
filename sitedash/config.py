@@ -1,0 +1,7 @@
+import os
+
+SQLALCHEMY_DATABASE_URI = os.environ['CONNECTION_STRING']
+SQLALCHEMY_TRACK_MODIFICATIONS = False
+WTF_CSRF_ENABLED = True
+SECRET_KEY = 'you-will-never-guess'
+IMAGE_DIR='/tmp/images'

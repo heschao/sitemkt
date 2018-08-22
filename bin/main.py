@@ -1,11 +1,17 @@
+import asyncio
+import logging
+import sys
+
 import click
 from sqlalchemy import create_engine
 
 from sitemkt import config, campground
+from sitemkt.dates_available import get_availability
 from sitemkt.model import Base, get_session, Campground, Site, RawAvailable
-from sitemkt.availabilitystore import DbCampgroundStore
-from sitemkt.util import config_logging
+from sitemkt.availabilitystore import DbCampgroundStore, DbAvailabilityStore
+from sitemkt.util import config_logging, GracefulKiller
 
+logger = logging.getLogger(__name__)
 
 @click.group()
 def cli():
@@ -46,9 +52,29 @@ def status_cli():
 {:12,.0f} records
 '''.format(n_campgrounds,n_sites,n_records))
 
-# TODO Package into installable on hda
-# TODO Set up cron job to run on hda
-# TODO Visualize data from db
+@cli.command(name='check-availability')
+@click.option('--max-pages','-n',default=9999)
+def check_availability_cli(max_pages):
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(check_all_sites(max_pages))
+
+
+async def check_all_sites(max_pages):
+    campground_store = DbCampgroundStore(session=get_session())
+    for c in campground_store.get():
+        logger.info('campground={}'.format(c))
+        store = DbAvailabilityStore(session=get_session(), park_id=c.park_id)
+        try:
+            await get_availability(show_ui=False, n=max_pages, store=store)
+        except KeyboardInterrupt as e:
+            logger.info('break detected... exit')
+            break
+        except Exception as e:
+            logger.error('failed with {}; moving on...'.format(e))
+            
+
 
 if __name__ == "__main__":
     cli()
+
+# TODO site number is really a string

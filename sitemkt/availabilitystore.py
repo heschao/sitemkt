@@ -2,14 +2,12 @@ import logging
 from abc import ABCMeta, abstractmethod
 from datetime import datetime, date, timedelta
 from typing import List
-from urllib.parse import urlunparse
 
 import numpy as np
 import pandas as pd
 from craniutil.bulk import bulk_upload
 from craniutil.dbtest.testdb import TestDb
 from dateutil.relativedelta import relativedelta
-from nose.tools import set_trace
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -17,6 +15,7 @@ from sitemkt.data import Availability, SiteDateAvailable
 from sitemkt.model import RawAvailable, Base, SiteAvailable, Site, Campground
 
 logger = logging.getLogger(__name__)
+
 
 class AvailabilityStore(metaclass=ABCMeta):
     @abstractmethod
@@ -34,8 +33,8 @@ class AvailabilityStore(metaclass=ABCMeta):
 
 class DbAvailabilityStore(AvailabilityStore):
     def get_url(self) -> str:
-        return "https://recreation.gov" + self.session.query(Campground).filter(Campground.park_id==self.park_id).first().url
-
+        return "https://recreation.gov" + self.session.query(Campground).filter(
+            Campground.park_id == self.park_id).first().url
 
     def __init__(self, session, park_id):
         self.session = session
@@ -44,11 +43,11 @@ class DbAvailabilityStore(AvailabilityStore):
     def put(self, a: SiteDateAvailable, t0: datetime, t1: datetime):
         x = a.to_series().reset_index().assign(t0=t0, t1=t1)
         x = x.assign(t0=t0, t1=t1)
-        x = x.rename(columns={'site': 'site_number', 'is_available': 'availability'})
-        self.update_sites(site_numbers = x.site_number.values)
+        x = x.rename(columns={'site': 'site_name', 'is_available': 'availability'})
+        self.update_sites(site_names=x.site_name.values)
 
         x = self.map_to_site_id(x)
-        x = x.assign( availability = x.availability.astype(int))
+        x = x.assign(availability=x.availability.astype(int))
         cols = ['site_id', 't0', 't1', 'date', 'availability']
         data = [cols] + x[cols].values.tolist()
 
@@ -77,51 +76,49 @@ class DbAvailabilityStore(AvailabilityStore):
             )
             y = pd.read_sql_query(q.statement, self.session.connection(), index_col=['site_id', 'date'])
             y = y.unstack('date').reset_index()
-            y = self.map_to_site_number(y)
+            y = self.map_to_site_name(y)
 
-            return SiteDateAvailable(sites=y.site_number, dates=y.columns, is_available=y.availability)
+            return SiteDateAvailable(sites=y.site_name, dates=y.columns, is_available=y.availability)
 
-    def map_to_site_id(self, x:pd.DataFrame) -> pd.DataFrame:
+    def map_to_site_id(self, x: pd.DataFrame) -> pd.DataFrame:
         m = self.get_site_map()
-        u = x.merge(m,on='site_number',how='left')
+        u = x.merge(m, on='site_name', how='left')
         assert not u.site_id.isnull().any()
         return u
 
     def get_site_map(self):
-        q = self.session.query(Site.id.label('site_id'), Site.number.label('site_number')).filter(
+        q = self.session.query(Site.id.label('site_id'), Site.name.label('site_name')).filter(
             Site.park_id == self.park_id)
         m = pd.read_sql_query(q.statement, self.session.connection())
         return m
 
-    def map_to_site_number(self, y):
+    def map_to_site_name(self, y):
         m = self.get_site_map()
-        u = y.merge(m,on='site_id',how='left')
-        assert not u.site_number.isnull().any()
+        u = y.merge(m, on='site_id', how='left')
+        assert not u.site_name.isnull().any()
         return u
 
-    def update_sites(self, site_numbers:List[int]):
-        existing_site_numbers = [x.number for x in self.session.query(Site.number).filter(Site.park_id==self.park_id).all()]
-        new_site_numbers = set(site_numbers).difference(set(existing_site_numbers))
-        for site_number in new_site_numbers:
-            self.session.add(Site(park_id=self.park_id, number=int(site_number)))
+    def update_sites(self, site_names: List[str]):
+        existing_site_names = [x.name for x in self.session.query(Site.name).filter(Site.park_id == self.park_id).all()]
+        new_site_names = set(site_names).difference(set(existing_site_names))
+        for site_name in new_site_names:
+            self.session.add(Site(park_id=self.park_id, name=site_name))
         self.session.flush()
 
 
 class TestDbStore(TestDb):
     @classmethod
     def setUpClass(cls):
-        super(TestDbStore,cls).setUpClass()
+        super(TestDbStore, cls).setUpClass()
         cls.session.add_all([
-            Campground(park_id=1,name='Doe Point',state='OR'),
-            Campground(park_id=2,name='Dowdy Lake',state='CO'),
+            Campground(park_id=1, name='Doe Point', state='OR'),
+            Campground(park_id=2, name='Dowdy Lake', state='CO'),
         ])
         cls.session.commit()
 
-
     @classmethod
     def tearDownClass(cls):
-        super(TestDbStore,cls).tearDownClass()
-
+        super(TestDbStore, cls).tearDownClass()
 
     @classmethod
     def base(cls):
@@ -130,7 +127,7 @@ class TestDbStore(TestDb):
     def test_put_0(self):
         try:
             instance = DbAvailabilityStore(self.session, park_id=1)
-            sites = [1, 2, 3]
+            sites = ['1', '2', '3']
             dates = [date(2018, 1, 1), date(2018, 2, 1)]
             is_available = (np.ones((3, 2)) * Availability.WALKIN.value)
             a = SiteDateAvailable(sites=sites, dates=dates, is_available=is_available)
@@ -143,24 +140,20 @@ class TestDbStore(TestDb):
     def test_put_1(self):
         try:
             instance = DbAvailabilityStore(self.session, park_id=1)
-            sites = [1, 2, 3]
+            sites = ['1', '2', '3']
             dates = [date(2018, 1, 1), date(2018, 2, 1)]
             is_available = (np.ones((3, 2)) * Availability.WALKIN.value)
             a = SiteDateAvailable(sites=sites, dates=dates, is_available=is_available)
             instance.put(a, datetime.utcnow(), datetime.utcnow())
 
-            sites = [3, 4]
+            sites = ['3', '4']
             dates = [date(2018, 1, 1), date(2018, 2, 1)]
             is_available = (np.ones((2, 2)) * Availability.RESERVED.value)
             b = SiteDateAvailable(sites=sites, dates=dates, is_available=is_available)
             instance.put(b, datetime.utcnow(), datetime.utcnow())
 
             count = self.session.query(RawAvailable).count()
-            assert count == 8
-
-            site_id = self.session.query(Site).filter(Site.park_id==1).filter(Site.number==3).first().id
-            result = self.session.query(RawAvailable).filter(RawAvailable.site_id == site_id).first()
-            assert result.availability == Availability.RESERVED.value, result
+            assert count == 16, count
         finally:
             self.session.rollback()
 
@@ -218,12 +211,19 @@ class ConsoleAvailabilityStore(AvailabilityStore):
 
 class CampgroundStore(metaclass=ABCMeta):
     @abstractmethod
-    def put(self,campgrounds:List[Campground]):
+    def put(self, campgrounds: List[Campground]):
+        pass
+
+    @abstractmethod
+    def get(self) -> List[Campground]:
         pass
 
 
 class DbCampgroundStore(CampgroundStore):
-    def __init__(self, session:Session):
+    def get(self) -> List[Campground]:
+        return self.session.query(Campground).all()
+
+    def __init__(self, session: Session):
         self.session = session
 
     def put(self, campgrounds: List[Campground]):
@@ -235,7 +235,6 @@ class DbCampgroundStore(CampgroundStore):
                 logger.warning('{} already exists'.format(c))
                 continue
             self.session.add(c)
-            n+=1
+            n += 1
         self.session.commit()
         logger.info('added {} new campgrounds'.format(n))
-

@@ -66,7 +66,7 @@ class Campground(Base):
 
 class Site(Base):
     __tablename__ = 'site'
-    __table_args__ = (UniqueConstraint('park_id','number'),)
+    __table_args__ = (UniqueConstraint('park_id','name'),)
     id = Column(String,default=uuidstr,primary_key=True)
     park_id = Column(Integer, ForeignKey('campground.park_id'))
-    number = Column(Integer)
+    name = Column(String)

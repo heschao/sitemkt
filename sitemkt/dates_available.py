@@ -70,14 +70,14 @@ def test_decode_dates():
     npt.assert_array_equal(result, [date(2018,8,31), date(2018,9,1), date(2018,9,2)])
 
 
-def parse_site_number(cell) -> Optional[int]:
+def parse_site_name(cell) -> Optional[str]:
     label = cell.find(lambda tag: tag.name == 'div' and tag.has_attr("class") and \
                                   'siteListLabel' in tag['class'])
     if not label:
         return None
     a = label.find(lambda tag: tag.name == 'a')
     try:
-        return int(a.contents[0])
+        return a.contents[0].strip()
     except ValueError:
         logger.error('failed to parse as int {}'.format(a.contents[0]))
         return None
@@ -108,10 +108,10 @@ def find_site_availabilities(table) -> (List[str], np.ndarray):
     for row in rows:
         x = []
         cells = row.findAll(lambda tag: tag.name == 'td')
-        site_number = parse_site_number(cells[0])
-        if not site_number:
+        site_name = parse_site_name(cells[0])
+        if not site_name:
             continue
-        sites.append(site_number)
+        sites.append(site_name)
         for cell in cells[2:]:
             x.append(parse_cell(cell).value)
         y.append(x)
@@ -306,6 +306,8 @@ async def get_availability(show_ui=False, n=9999, store: AvailabilityStore = Con
         store.put(availability, t0=t0, t1=t1)
 
     await browser.close()
+
+    return True
 
 
 # TODO add asyncio unit tests
